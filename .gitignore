@@ -1,2 +1,6 @@
 lib
-
+Debug/
+Release/
+.settings/
+.cproject
+.project
