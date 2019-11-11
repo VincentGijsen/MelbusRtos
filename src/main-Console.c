@@ -1,6 +1,14 @@
+/*
+ * main-Console.c
+ *
+ *  Created on: Nov 4, 2019
+ *      Author: vincent
+ */
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+
+#include "SYSTEM_EVENTS.h"
 
 #include "IO.h"
 #include <libopencm3/cm3/nvic.h>
@@ -12,9 +20,10 @@
  */
 static void taskConsoleManager(void *pvParameters);
 static void usart_setup(void);
-signed long xSerialGetChar(signed char *pcRxedChar, TickType_t xBlockTime);
+signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime);
 long lSerialPutString(const char * const pcString, unsigned long ulStringLength);
 signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime);
+void updateScreen(char* content, char length);
 
 /*
  * Queues
@@ -27,13 +36,13 @@ static QueueHandle_t xCharsForTx = { 0 };
 static QueueHandle_t xRxedChars = { 0 };
 
 /* Queues are used to hold characters that are waiting to be transmitted.  This
-constant sets the maximum number of characters that can be contained in such a
-queue at any one time. */
+ constant sets the maximum number of characters that can be contained in such a
+ queue at any one time. */
 #define serTX_QUEUE_LEN					( 10 )
 
 /* Queues are used to hold characters that have been received but not yet
-processed.  This constant sets the maximum number of characters that can be
-contained in such a queue. */
+ processed.  This constant sets the maximum number of characters that can be
+ contained in such a queue. */
 #define serRX_QUEUE_LEN					( 10 )
 
 /* The maximum amount of time that calls to lSerialPutString() should wait for
@@ -59,26 +68,174 @@ void mainConsoleManager(void) {
 
 }
 
+//method to send event codes to application
+void postApplicationEvent(uint8_t event) {
+	uint8_t e = event;
+	xQueueSend(xApplicationEvents, &e, 0);
+}
+
 static void taskConsoleManager(void *pvParameters) {
 
 	TickType_t xNextWakeTime;
 
-	static char cls[] = { 27, '[', '2','J', 27, '[', 'H'};
-	char data[1] = { ' '};
-	data[0] = 'h';
-	data[1] = ' ';
+	static char cls[] = { 27, '[', '2', 'J', 27, '[', 'H' }; /*terminal command to clear it */
+	char c = ' ';
 
 	xNextWakeTime = xTaskGetTickCount();
+
+	enum STATE {
+		PLAYING = 0, IDLE, SETTINGS, CALL_INBOUND, CALL_OUTBOUND,
+	};
+
+	char evt = 0; //events received from main task
+	enum STATE state;
+
 	for (;;) {
-		if (xSerialGetChar(&data, 1) == pdPASS) {
-			lSerialPutString(cls, 7);
-			//vTaskDelayUntil( &xNextWakeTime, 100 );
+		//commands from serial port?
+		if (xSerialGetChar(&c, 20) == pdPASS) {
+			uint8_t code = EVT_INVALID;
+			switch (c) {
+			case 'n':
+				code = EVT_BTN_NEXT;
+				break;
+			case 'p':
+				code = EVT_BTN_SCAN;
+				break;
+			case 'r':
+				code = EVT_BTN_RND;
+				break;
+			case 's':
+				code = EVT_BTN_SCAN;
+				break;
+			case '1':
+				code = EVT_BTN_1;
+				break;
+			case '2':
+				code = EVT_BTN_2;
+				break;
+			case '3':
+				code = EVT_BTN_3;
+				break;
+			case '4':
+				code = EVT_BTN_4;
+				break;
+			case '5':
+				code = EVT_BTN_5;
+				break;
+			case '6':
+				code = EVT_BTN_6;
 
-			lSerialPutString(&data, 1);
-			gpio_toggle(GPIOC, LED_PIN);
+				break;
 
+			default:
+				//invalid char
+				break;
+			}
+
+			if (code != EVT_INVALID) {
+				//send the code
+				postApplicationEvent(code);
+			}else
+			{
+				//invalid command; print error
+				lSerialPutString(cls, 7);
+				lSerialPutString("invalid cmd", 11);
+				vTaskDelayUntil(&xNextWakeTime, 200);
+
+			}
 		}
+
+		//events from main application?
+		if (xQueueReceive(xConsoleEvents, &evt, 0) == pdPASS) {
+			switch (evt) {
+
+			case EVT_MUSIC_SCREEN:
+				updateScreen("MUSIC ACTIVATED", 15);
+				state = PLAYING;
+				break;
+
+			case EVT_MUSIC_FF:
+				updateScreen("FF", 2);
+				break;
+
+			case EVT_MUSIC_FR:
+				updateScreen("FR", 2);
+				break;
+
+			case EVT_MUSIC_NEXT:
+				updateScreen("NEXT", 4);
+				break;
+
+			case EVT_MUSIC_PREVIOUS:
+				updateScreen("PREVIOUS", 8);
+				break;
+
+			case EVT_CALL_INBOUND:
+				updateScreen("CALL INBOUND", 12);
+				state = CALL_INBOUND;
+				break;
+
+			case EVT_CALL_OUTBOUND:
+				updateScreen("CALL_OUTBOUND", 13);
+				break;
+
+			case EVT_CMD_VOICEASSISTANT_START:
+				updateScreen("VOICE_ASSIST START", 18);
+				break;
+
+			case EVT_CMD_VOICEASSISTANT_CLOSE:
+				updateScreen("VOICE_ASSIST STOP", 17);
+				break;
+			}
+		}
+
+		//update screean every half second
+		vTaskDelayUntil(&xNextWakeTime, 500);
+
+		switch (state) {
+		case PLAYING:
+			updateScreen("playing", 7);
+			break;
+
+		case IDLE:
+			updateScreen("idle", 4);
+			break;
+
+		case CALL_INBOUND:
+			//nothing, text is accurate
+
+			break;
+
+		case CALL_OUTBOUND:
+
+			//nothing
+
+			break;
+
+		default:
+			//to be filled;
+			break;
+		}
+
+		/*
+		 *
+		 lSerialPutString(cls, 7);
+		 //vTaskDelayUntil( &xNextWakeTime, 100 );
+
+		 lSerialPutString(&data, 1);
+		 gpio_toggle(GPIOC, LED_PIN);
+		 */
+
 	}
+}
+
+/*
+ * Updates the 'virtual' screen
+ */
+void updateScreen(char* content, char length) {
+	static char cls[] = { 27, '[', '2', 'J', 27, '[', 'H' }; /*terminal command to clear it */
+	lSerialPutString(cls, 7);
+	lSerialPutString(content, length);
 
 }
 
@@ -111,7 +268,7 @@ static void usart_setup() {
 
 }
 
-signed long xSerialGetChar(signed char *pcRxedChar, TickType_t xBlockTime) {
+signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime) {
 	long lReturn = pdFAIL;
 
 	if (xQueueReceive(xRxedChars, pcRxedChar, xBlockTime) == pdPASS) {
