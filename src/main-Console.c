@@ -19,7 +19,7 @@
  * Prototypes
  */
 static void taskConsoleManager(void *pvParameters);
-static void usart_setup(void);
+static void usart1_setup(void);
 signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime);
 long lSerialPutString(const char * const pcString, unsigned long ulStringLength);
 signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime);
@@ -53,7 +53,7 @@ static QueueHandle_t xRxedChars = { 0 };
 
 void mainConsoleManager(void) {
 
-	usart_setup();
+	usart1_setup();
 
 	/* Create the queue of chars that are waiting to be sent to COM0. */
 	xCharsForTx = xQueueCreate(serTX_QUEUE_LEN, sizeof(char));
@@ -67,12 +67,13 @@ void mainConsoleManager(void) {
 			(void *) 0, PRIO, NULL);
 
 }
-
+/*
 //method to send event codes to application
 void postApplicationEvent(uint8_t event) {
 	uint8_t e = event;
 	xQueueSend(xApplicationEvents, &e, 0);
 }
+*/
 
 static void taskConsoleManager(void *pvParameters) {
 
@@ -84,7 +85,7 @@ static void taskConsoleManager(void *pvParameters) {
 	xNextWakeTime = xTaskGetTickCount();
 
 	enum STATE {
-		PLAYING = 0, IDLE, SETTINGS, CALL_INBOUND, CALL_OUTBOUND,
+		PLAYING = 0, PAUSE, IDLE, SETTINGS, CALL_INBOUND, CALL_OUTBOUND,
 	};
 
 	char evt = 0; //events received from main task
@@ -152,6 +153,16 @@ static void taskConsoleManager(void *pvParameters) {
 			case EVT_MUSIC_SCREEN:
 				updateScreen("MUSIC ACTIVATED", 15);
 				state = PLAYING;
+				break;
+
+			case EVT_MUSIC_PAUSE:
+				state = PAUSE;
+				updateScreen("PAUSE", 5);
+				break;
+
+			case EVT_MUSIC_PLAY:
+				updateScreen("PLAY", 4);
+				state =PLAYING;
 				break;
 
 			case EVT_MUSIC_FF:
@@ -239,7 +250,7 @@ void updateScreen(char* content, char length) {
 
 }
 
-static void usart_setup() {
+static void usart1_setup() {
 	/*
 	 Enable the USART1 interrupt. */
 	nvic_enable_irq(NVIC_USART1_IRQ);

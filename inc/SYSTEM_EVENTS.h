@@ -2,9 +2,21 @@
  * SYSTEM_EVENTS.h
  */
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
 extern QueueHandle_t xApplicationEvents;
 extern QueueHandle_t xConsoleEvents;
 extern QueueHandle_t xScreenEvents;
+extern QueueHandle_t xBMCommands;
+
+//event dispatchers
+extern void postApplicationEvent(uint8_t event);
+extern void postConsoleEvent(uint8_t event);
+extern void postBMcommand(uint8_t event);
+
+
 
 enum MYEVENTS {
 	EVT_INVALID = 0,
@@ -14,6 +26,7 @@ enum MYEVENTS {
 	EVT_CALL_ANSWER,
 	EVT_CALL_REJECT,
 	EVT_CALL_FAILED,
+	EVT_CALL_HANGUP,
 
 	EVT_CMD_VOICEASSISTANT_START,
 	EVT_CMD_VOICEASSISTANT_CLOSE,
@@ -25,6 +38,7 @@ enum MYEVENTS {
 	EVT_MUSIC_FR,
 	EVT_MUSIC_PLAY,
 	EVT_MUSIC_PAUSE,
+	EVT_MUSIC_STOP,
 
 	EVT_SETTINGS_PAIRING,
 	EVT_SETTINGS_PAIRING_INIT,

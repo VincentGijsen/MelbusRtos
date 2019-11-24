@@ -21,7 +21,6 @@ static void taskApplication(void *pvParameters);
 
 void mainAppManager(void) {
 
-
 #define QUEUE_BLOCK_TIME 200
 
 #define QUEUE_PRIO ( tskIDLE_PRIORITY + 1 )
@@ -30,11 +29,6 @@ void mainAppManager(void) {
 	QUEUE_PRIO, NULL);
 }
 
-void postConsoleEvent(uint8_t event) {
-	uint8_t elem = event;
-	xQueueSend(xConsoleEvents, &elem, 0);
-
-}
 static void taskApplication(void *pvParameters) {
 	TickType_t xNextWakeTime;
 	xNextWakeTime = xTaskGetTickCount();
@@ -72,6 +66,8 @@ static void taskApplication(void *pvParameters) {
 				case EVT_BTN_1:
 					//voice dail
 					postConsoleEvent(EVT_CMD_VOICEASSISTANT_START);
+					lastState = IDLE;
+					appState = VOICE_ASSIST;
 					break;
 
 				default:
@@ -92,6 +88,7 @@ static void taskApplication(void *pvParameters) {
 				case EVT_BTN_3:
 					//voice dail
 					postConsoleEvent(EVT_CMD_VOICEASSISTANT_CLOSE);
+					appState = lastState;
 					break;
 
 				default:
@@ -107,7 +104,7 @@ static void taskApplication(void *pvParameters) {
 				switch (evt) {
 				case EVT_BTN_NEXT:
 					postConsoleEvent(EVT_MUSIC_NEXT);
-
+					postBMcommand(EVT_MUSIC_NEXT);
 					break;
 
 				case EVT_BTN_PREV:
@@ -116,7 +113,8 @@ static void taskApplication(void *pvParameters) {
 
 				case EVT_BTN_SCAN:
 					if (playing) {
-						postConsoleEvent(EVT_MUSIC_PLAY);
+						postConsoleEvent(EVT_MUSIC_PAUSE);
+
 						playing = 0;
 					} else {
 						postConsoleEvent(EVT_MUSIC_PAUSE);
@@ -126,13 +124,25 @@ static void taskApplication(void *pvParameters) {
 					break;
 
 				case EVT_BTN_RND:
-
+					//command never send by Hu, only for DBG purposes to emulate 'screen'
+					postConsoleEvent(EVT_BTN_RND);
 					break;
 
 				case EVT_CALL_INBOUND:
 					//inbound call,
 					appState = INBOUND_CALL;
 					lastState = MUSIC;
+					break;
+
+					/*
+					 * These come from BT module
+					 */
+				case EVT_MUSIC_PAUSE:
+					postConsoleEvent(EVT_MUSIC_PAUSE);
+					break;
+
+				case EVT_MUSIC_PLAY:
+					postConsoleEvent(EVT_MUSIC_PLAY);
 					break;
 
 				default:
@@ -149,6 +159,7 @@ static void taskApplication(void *pvParameters) {
 				case EVT_BTN_1:
 					//answer
 					postConsoleEvent(EVT_CALL_ANSWER);
+					appState = CALLING;
 					break;
 
 				case EVT_BTN_3:
@@ -165,7 +176,14 @@ static void taskApplication(void *pvParameters) {
 				break;
 
 			case CALLING:
+				switch (evt) {
 
+				case EVT_BTN_3:
+					//hangup
+					postConsoleEvent(EVT_CALL_HANGUP);
+					break;
+
+				}
 				break;
 
 			}

@@ -31,6 +31,7 @@ void mainConsoleManager(void);
  QueueHandle_t xApplicationEvents;
  QueueHandle_t xConsoleEvents;
  QueueHandle_t xScreenEvents;
+ QueueHandle_t xBMCommands;
 
 #include "SYSTEM_EVENTS.h"
 
@@ -40,20 +41,23 @@ void mainConsoleManager(void);
 
 
 int main() {
+
 	rcc_clock_setup_in_hse_8mhz_out_72mhz();
 
 	prvSetupHardware();
 	//start this task as it creates moste queues
 
 	//setup queues
-	xApplicationEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(char));
-	xConsoleEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(char));
-	xScreenEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(char));
+	xApplicationEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(uint8_t));
+	xConsoleEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(uint8_t));
+	xScreenEvents = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(uint8_t));
+	xBMCommands = xQueueCreate(MAX_COMMANDS_TO_QUEUE, sizeof(uint8_t));
 
 	mainAppManager();
 
 	mainScreenManager();
 	mainConsoleManager();
+	mainBM();
 	mainAppManager();
 
 	vTaskStartScheduler();
@@ -75,6 +79,7 @@ static void prvSetupHardware(void) {
 	rcc_periph_clock_enable(RCC_GPIOA);
 	rcc_periph_clock_enable(RCC_AFIO);
 	rcc_periph_clock_enable(RCC_USART1);
+	rcc_periph_clock_enable(RCC_USART2);
 
 }
 void vApplicationMallocFailedHook(void) {
