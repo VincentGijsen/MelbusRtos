@@ -15,6 +15,8 @@
 #include <libopencm3/stm32/usart.h>
 #include <libopencm3/stm32/gpio.h>
 
+#include "usb.h"
+
 /*
  * Prototypes
  */
@@ -23,7 +25,7 @@ static void usart1_setup(void);
 signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime);
 long lSerialPutString(const char * const pcString, unsigned long ulStringLength);
 signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime);
-void updateScreen(char* content, char length);
+void updateScreen(char* content);
 
 /*
  * Queues
@@ -51,9 +53,19 @@ static QueueHandle_t xRxedChars = { 0 };
  wait for the entire string. */
 #define serPUT_STRING_CHAR_DELAY		( 5 / portTICK_PERIOD_MS )
 
+/*
+ * Global vars
+ */
+
+uint8_t clearScreenOnIteration = 0;
+
 void mainConsoleManager(void) {
 
-	usart1_setup();
+//	usart1_setup();
+	//init usb
+	usb_init();
+	usbd_poll(usb_getDevPtr());
+
 
 	/* Create the queue of chars that are waiting to be sent to COM0. */
 	xCharsForTx = xQueueCreate(serTX_QUEUE_LEN, sizeof(char));
@@ -68,12 +80,12 @@ void mainConsoleManager(void) {
 
 }
 /*
-//method to send event codes to application
-void postApplicationEvent(uint8_t event) {
-	uint8_t e = event;
-	xQueueSend(xApplicationEvents, &e, 0);
-}
-*/
+ //method to send event codes to application
+ void postApplicationEvent(uint8_t event) {
+ uint8_t e = event;
+ xQueueSend(xApplicationEvents, &e, 0);
+ }
+ */
 
 static void taskConsoleManager(void *pvParameters) {
 
@@ -92,22 +104,42 @@ static void taskConsoleManager(void *pvParameters) {
 	enum STATE state;
 
 	for (;;) {
-		//commands from serial port?
-		if (xSerialGetChar(&c, 20) == pdPASS) {
+				//commands from serial port?
+		//if (xSerialGetChar(&c, 20) == pdPASS) {
+		if (usb_vcp_avail()) {
+			c = usb_vcp_recv_byte();
+
 			uint8_t code = EVT_INVALID;
 			switch (c) {
-			case 'n':
+			case '>':
 				code = EVT_BTN_NEXT;
+				break;
+			case '<':
+				code = EVT_BTN_PREV;
 				break;
 			case 'p':
 				code = EVT_BTN_SCAN;
 				break;
+
+				//code to toggle between display -lines, not available on HU
 			case 'r':
 				code = EVT_BTN_RND;
 				break;
+
+				/*
+				 * Music mode
+				 * play/pause < in music mode
+				 *
+				 * Inbound call
+				 *  pickup
+				 */
 			case 's':
 				code = EVT_BTN_SCAN;
 				break;
+
+				/*
+				 * Voice Assistent
+				 */
 			case '1':
 				code = EVT_BTN_1;
 				break;
@@ -125,7 +157,13 @@ static void taskConsoleManager(void *pvParameters) {
 				break;
 			case '6':
 				code = EVT_BTN_6;
+				break;
 
+				/*
+				 * DEBUG options
+				 */
+			case 'q':
+				code = EVT_DGB_Q;
 				break;
 
 			default:
@@ -136,80 +174,98 @@ static void taskConsoleManager(void *pvParameters) {
 			if (code != EVT_INVALID) {
 				//send the code
 				postApplicationEvent(code);
-			}else
-			{
+			} else {
 				//invalid command; print error
-				lSerialPutString(cls, 7);
-				lSerialPutString("invalid cmd", 11);
-				vTaskDelayUntil(&xNextWakeTime, 200);
+				//lSerialPutString(cls, 7);
+				//lSerialPutString("invalid cmd", 11);
+				usb_vcp_send_strn(cls, 7);
+				usb_vcp_send_strn("invalid command", 11);
+				//vTaskDelayUntil(&xNextWakeTime, 200);
 
 			}
 		}
 
 		//events from main application?
-		if (xQueueReceive(xConsoleEvents, &evt, 0) == pdPASS) {
+		if (xQueueReceive(xConsoleEvents, &evt, 1) == pdPASS) {
 			switch (evt) {
 
 			case EVT_MUSIC_SCREEN:
-				updateScreen("MUSIC ACTIVATED", 15);
+				updateScreen("MUSIC ACTIVATED\n");
 				state = PLAYING;
 				break;
 
 			case EVT_MUSIC_PAUSE:
 				state = PAUSE;
-				updateScreen("PAUSE", 5);
+				updateScreen("PAUSE\n");
 				break;
 
 			case EVT_MUSIC_PLAY:
-				updateScreen("PLAY", 4);
-				state =PLAYING;
+				updateScreen("PLAY\n");
+				state = PLAYING;
 				break;
 
 			case EVT_MUSIC_FF:
-				updateScreen("FF", 2);
+				updateScreen("FF\n");
 				break;
 
 			case EVT_MUSIC_FR:
-				updateScreen("FR", 2);
+				updateScreen("FR\n");
 				break;
 
 			case EVT_MUSIC_NEXT:
-				updateScreen("NEXT", 4);
+				updateScreen("NEXT\n");
 				break;
 
 			case EVT_MUSIC_PREVIOUS:
-				updateScreen("PREVIOUS", 8);
+				updateScreen("PREVIOU\n");
 				break;
 
 			case EVT_CALL_INBOUND:
-				updateScreen("CALL INBOUND", 12);
+				updateScreen("CALL INBOUND\n");
 				state = CALL_INBOUND;
 				break;
 
 			case EVT_CALL_OUTBOUND:
-				updateScreen("CALL_OUTBOUND", 13);
+				updateScreen("CALL_OUTBOUND\n");
 				break;
 
 			case EVT_CMD_VOICEASSISTANT_START:
-				updateScreen("VOICE_ASSIST START", 18);
+				updateScreen("VOICE_ASSIST START\n");
 				break;
 
 			case EVT_CMD_VOICEASSISTANT_CLOSE:
-				updateScreen("VOICE_ASSIST STOP", 17);
+				updateScreen("VOICE_ASSIST STOP\n");
 				break;
+
+			case EVT_PHONE_0_CONNECTED:
+				updateScreen("PHONE 0 CONNECTED\n");
+				break;
+
+			case EVT_PHONE_0_DISCONNECTED:
+				updateScreen("PHONE 0 disconnected\n");
+				break;
+
+			case EVT_PHONE_1_CONNECTED:
+				updateScreen("PHONE 1 CONNECTED\n");
+				break;
+
+			case EVT_PHONE_1_DISCONNECTED:
+				updateScreen("PHONE 1 disconnected\n");
+				break;
+
 			}
 		}
 
 		//update screean every half second
-		vTaskDelayUntil(&xNextWakeTime, 500);
+		//vTaskDelayUntil(&xNextWakeTime, 500);
 
 		switch (state) {
 		case PLAYING:
-			updateScreen("playing", 7);
+			//updateScreen("playing", 7);
 			break;
 
 		case IDLE:
-			updateScreen("idle", 4);
+			//updateScreen("idle", 4);
 			break;
 
 		case CALL_INBOUND:
@@ -243,11 +299,16 @@ static void taskConsoleManager(void *pvParameters) {
 /*
  * Updates the 'virtual' screen
  */
-void updateScreen(char* content, char length) {
+void updateScreen(char* content) {
 	static char cls[] = { 27, '[', '2', 'J', 27, '[', 'H' }; /*terminal command to clear it */
-	lSerialPutString(cls, 7);
-	lSerialPutString(content, length);
-
+	//lSerialPutString(cls, 7);
+	usb_vcp_send_strn(cls, 7);
+	uint8_t x = 0;
+	while (content[x] != '\n') {
+		//lSerialPutString(&content[x], 1);
+		usb_vcp_send_strn(&content[x], 1);
+		x++;
+	}
 }
 
 static void usart1_setup() {
@@ -288,39 +349,40 @@ signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime) {
 
 	return lReturn;
 }
+/*
+ long lSerialPutString(const char * const pcString, unsigned long ulStringLength) {
+ long lReturn;
+ unsigned long ul;
 
-long lSerialPutString(const char * const pcString, unsigned long ulStringLength) {
-	long lReturn;
-	unsigned long ul;
+ lReturn = pdPASS;
 
-	lReturn = pdPASS;
+ for (ul = 0; ul < ulStringLength; ul++) {
+ if ( xQueueSend(xCharsForTx, &(pcString[ul]),
+ serPUT_STRING_CHAR_DELAY) != pdPASS) {
+ // Cannot fit any more in the queue.  Try turning the Tx on to
+ // clear some space.
+ USART_CR1(USART1) |= USART_CR1_TXEIE;
 
-	for (ul = 0; ul < ulStringLength; ul++) {
-		if ( xQueueSend(xCharsForTx, &(pcString[ul]),
-				serPUT_STRING_CHAR_DELAY) != pdPASS) {
-			/* Cannot fit any more in the queue.  Try turning the Tx on to
-			 clear some space. */
-			USART_CR1(USART1) |= USART_CR1_TXEIE;
+ vTaskDelay( serPUT_STRING_CHAR_DELAY);
 
-			vTaskDelay( serPUT_STRING_CHAR_DELAY);
+ //Go back and try again.
+ continue;
+ }
 
-			/* Go back and try again. */
-			continue;
-		}
+ }
+ USART_CR1(USART1) |= USART_CR1_TXEIE;
 
-	}
-	USART_CR1(USART1) |= USART_CR1_TXEIE;
-
-	return lReturn;
-}
-
+ return lReturn;
+ }
+ */
+/*
 signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime) {
 	long lReturn;
 
 	if ( xQueueSend( xCharsForTx, &data, xBlockTime ) == pdPASS) {
 		lReturn = pdPASS;
 		//USART_ITConfig( xUARTS[ lPort ], USART_IT_TXE, ENABLE );
-		/* Enable transmit interrupt so it sends back the data. */
+	// Enable transmit interrupt so it sends back the data.
 		USART_CR1(USART1) |= USART_CR1_TXEIE;
 	} else {
 		lReturn = pdFAIL;
@@ -328,6 +390,7 @@ signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime) {
 
 	return lReturn;
 }
+*/
 
 void USART1_IRQHandler(void) {
 	long xHigherPriorityTaskWoken = pdFALSE;

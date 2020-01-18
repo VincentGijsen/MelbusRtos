@@ -18,6 +18,7 @@
  */
 #include "IO.h"
 
+
 /*
  * prototypes
  */
@@ -58,7 +59,7 @@ int main() {
 	mainScreenManager();
 	mainConsoleManager();
 	mainBM();
-	mainAppManager();
+	//mainAppManager();
 
 	vTaskStartScheduler();
 	for (;;) {

@@ -8,10 +8,12 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 
 #include "SYSTEM_EVENTS.h"
-
+#include "QueueLimits.h"
 #include "IO.h"
+
 #include <libopencm3/cm3/nvic.h>
 #include <libopencm3/stm32/usart.h>
 #include <libopencm3/stm32/gpio.h>
@@ -19,106 +21,49 @@
 #include "IS2020/MUSIC.h"
 #include "IS2020/IS2020.h"
 
+//SemaphoreHandle_t xSemaphorePkgsOut;
+static uint8_t flagPkgOut = false;
 /* Queues used to hold characters waiting to be transmitted - one queue per port. */
-static QueueHandle_t xCharsForTxBM = { 0 };
+static QueueHandle_t xQueueBluetoothModuleTX = { 0 };
 
 /* Queues holding received characters - one queue per port. */
-static QueueHandle_t xRxedCharsBM = { 0 };
+static QueueHandle_t xQueueBluetoothModuleRX = { 0 };
 
-/* Queues are used to hold characters that are waiting to be transmitted.  This
- constant sets the maximum number of characters that can be contained in such a
- queue at any one time. */
-#define serTX_QUEUE_LENBM					( 50 )
 
-/* Queues are used to hold characters that have been received but not yet
- processed.  This constant sets the maximum number of characters that can be
- contained in such a queue. */
-#define serRX_QUEUE_LENBM					( 50)
+
 
 /*Prototypes */
 static void taskBMManager(void *pvParameters);
 static void usart2_setup();
 signed long xSendcharToBM(uint8_t data, TickType_t xBlockTime);
 
-void writeSerial(uint8_t b){
-	//xQueueSend(xCharsForTxBM, &b, 0);
-	xSendcharToBM(b, 50);
-}
 
 void mainBM(void) {
 
 	/* Create the queue of chars that are waiting to be sent to COM0. */
-	xCharsForTxBM = xQueueCreate(serTX_QUEUE_LENBM, sizeof(char));
+	xQueueBluetoothModuleTX = xQueueCreate(QUEUELIMIT_BLUETOOTH_MODULE_TX, sizeof(char));
 
 	/* Create the queue used to hold characters received from COM0. */
-	xRxedCharsBM = xQueueCreate(serRX_QUEUE_LENBM, sizeof(char));
+	xQueueBluetoothModuleRX = xQueueCreate(QUEUELIMIT_BLUETOOTH_MODULE_RX, sizeof(char));
 	usart2_setup();
 
 #define PRIO ( tskIDLE_PRIORITY + 1 )
-
-	xTaskCreate(taskBMManager, "BM", configMINIMAL_STACK_SIZE, (void *) 0, PRIO,
+	unsigned short STACK_SIZE = configMINIMAL_STACK_SIZE + 60;
+	xTaskCreate(taskBMManager, "BM", STACK_SIZE, (void *) 0, PRIO,
 	NULL);
 
 }
 
-static uint8_t event[50] = { 0 };
-
 static void taskBMManager(void *pvParameters) {
 	TickType_t xNextWakeTime;
 
-	//static char cls[] = { 27, '[', '2', 'J', 27, '[', 'H' }; /*terminal command to clear it */
-	//char c = ' ';
-
 	xNextWakeTime = xTaskGetTickCount();
-	uint8_t awaiting_pkg_size = 0, tmp = 0;
+	//IS2020_setIO(writeSerial, checkOutActivate);
+	IS2020_setQueues(xQueueBluetoothModuleRX, xQueueBluetoothModuleTX);
 
 	for (;;) {
 
-		if ((awaiting_pkg_size == 0)
-				&& (uxQueueMessagesWaiting(xRxedCharsBM) > 3)) {
-			//check if first byte is STAR of msg
-			uint8_t preamble = 0;
-			if (xQueueReceive(xRxedCharsBM, &preamble, 20) == pdPASS) {
-				//check-preamble
-				if (preamble == 0xAA) {
-					//event[0] = preamble;
-					xQueueReceive(xRxedCharsBM, &tmp, 20);
-					awaiting_pkg_size = tmp << 8;
-					//event[1] = tmp;
-					xQueueReceive(xRxedCharsBM, &tmp, 20);
-					awaiting_pkg_size += tmp & 0xFF;
-					//event[2] = tmp;
-
-				}
-
-			}
-		}
-		// check if all data has arived
-		if (awaiting_pkg_size > 0
-				&& uxQueueMessagesWaiting(xRxedCharsBM)
-						>= awaiting_pkg_size + 1) {
-
-			for (uint8_t x = 0; x < awaiting_pkg_size + 1; x++) {
-				xQueueReceive(xRxedCharsBM, &tmp, 20);
-				event[x] = tmp;
-			}
-
-			//shift event over to IS2020 driver
-			//add +3 (0xaa + 2, +1 checksum)
-			IS2020_decode(awaiting_pkg_size + 1, &event);
-
-			//reset pkg-size, a
-			awaiting_pkg_size = 0;
-
-
-			/*
-			 if (event[3] == 0x00) {
-			 //got ack
-			 tmp = event[0];
-			 }
-			 */
-
-		}
+		//	IS2020_getnextEvent();
 
 		/*
 		 * Handle commands from app
@@ -127,45 +72,108 @@ static void taskBMManager(void *pvParameters) {
 		if (xQueueReceive(xBMCommands, &evt, 0) == pdPASS) {
 
 			switch (evt) {
-			case EVT_MUSIC_NEXT:
-				IS2020_MUSIC_CMD(eMUSIC_NEXT,0, writeSerial);
-				break;
+				case EVT_MUSIC_NEXT:
+					IS2020_MUSIC_CMD(eMUSIC_NEXT, 0);
+					break;
 
-			case EVT_MUSIC_PREVIOUS:
+				case EVT_MUSIC_PREVIOUS:
+					IS2020_MUSIC_CMD(eMUSIC_PREVIOUS, 0);
+					//vTaskDelay(500);
+					//IS2020_AVRCP_DISPLAYABLE_CHARS(writeSerial);
+					//vTaskDelay(500);
+					//IS2020_AVRCP_REGISTER_ALL_EVENTS(0);
 
-				break;
+					break;
 
-			case EVT_MUSIC_PAUSE:
+				case EVT_MUSIC_PAUSE:
+					IS2020_MUSIC_CMD(eMUSIC_PAUSE, 0);
+					break;
 
-				break;
+				case EVT_MUSIC_PLAY:
+					IS2020_MUSIC_CMD(eMUSIC_PLAY, 0);
+					break;
 
-			default:
+				case EVT_MUSIC_META:
+					//IS2020_AVRCP_DISPLAYABLE_CHARS(writeSerial);
+					//vTaskDelay(100);
+					//usb_vcp_send_strn("meta\n",5);
+					IS2020_AVRCP_META();
+					//IS2020_AVRCP_GETPLAY_STATUS(writeSerial);
+					break;
 
-				break;
+				case EVT_PHONE_0_CONNECTED:
+					//query info
+					IS2020_read_link_status(0);
+					postApplicationEvent(EVT_PHONE_0_CONNECTED);
+					IS2020_AVRCP_REGISTER_ALL_EVENTS(0);
+
+					break;
+
+				case EVT_PHONE_0_DISCONNECTED:
+					postApplicationEvent(EVT_PHONE_0_DISCONNECTED);
+					break;
+
+				case EVT_PHONE_1_CONNECTED:
+					IS2020_read_link_status(1);
+					postApplicationEvent(EVT_PHONE_1_CONNECTED);
+					break;
+
+				case EVT_PHONE_1_DISCONNECTED:
+					postApplicationEvent(EVT_PHONE_1_DISCONNECTED);
+					break;
+
+				case EVT_BATTERY_STATUS_CHANGED:
+					//do someghing
+					break;
+
+				case EVT_ROAMING_CHANGED:
+					//do something
+					break;
+
+				case EVT_SIGNAL_STRENGHT_CHANGED:
+					//do something
+				{
+
+				}
+					break;
+
+				default:
+
+					break;
 
 			}
 		}
 
+		/*
+		 * Check if TXbuffer has data, ifso, flush to Bluetooth-receiver
+		 */
+		if (uxQueueMessagesWaiting(xQueueBluetoothModuleTX) > 0) {
+			//pass start-command
+			USART_CR1(USART2) |= USART_CR1_TXEIE;
+		}
+
+		/*
+		 * check for new events
+		 */
+		IS2020_getnextEvent();
 	}
 
 }
+/*
+ signed long xSendcharToBM(uint8_t data, TickType_t xBlockTime) {
+ long lReturn;
 
+ if ( xQueueSend( xCharsForTxBM, &data, xBlockTime ) == pdPASS) {
+ lReturn = pdPASS;
+ //USART_ITConfig( xUARTS[ lPort ], USART_IT_TXE, ENABLE );
+ /// Enable transmit interrupt so it sends back the data.
+ } else {
+ lReturn = pdFAIL;
+ }
 
-signed long xSendcharToBM(uint8_t data, TickType_t xBlockTime) {
-	long lReturn;
-
-	if ( xQueueSend( xCharsForTxBM, &data, xBlockTime ) == pdPASS) {
-		lReturn = pdPASS;
-		//USART_ITConfig( xUARTS[ lPort ], USART_IT_TXE, ENABLE );
-		/* Enable transmit interrupt so it sends back the data. */
-		USART_CR1(USART2) |= USART_CR1_TXEIE;
-	} else {
-		lReturn = pdFAIL;
-	}
-
-	return lReturn;
-}
-
+ return lReturn;
+ }
+ */
 
 static void usart2_setup() {
 	nvic_enable_irq(NVIC_USART2_IRQ);
@@ -199,21 +207,21 @@ void USART2_IRQHandler(void) {
 	static uint8_t data = 'A';
 
 	/* Check if we were called because of RXNE. */
-	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0)
-			&& ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
+	if (((USART_CR1(USART2) & USART_CR1_RXNEIE) != 0) && ((USART_SR(USART2) & USART_SR_RXNE) != 0)) {
 
 		/* Indicate that we got data. */
 		//gpio_toggle(GPIOC, LED_PIN);
 		/* Retrieve the data from the peripheral. */
 		data = usart_recv(USART2);
-
-		xQueueSendFromISR(xRxedCharsBM, &data, &xHigherPriorityTaskWoken);
+		//prevent pushing to much
+		if (uxQueueMessagesWaitingFromISR(xQueueBluetoothModuleRX) < (QUEUELIMIT_BLUETOOTH_MODULE_RX - 1)) {
+			xQueueSendFromISR(xQueueBluetoothModuleRX, &data, &xHigherPriorityTaskWoken);
+		}
 
 	}
 
 	/* Check if we were called because of TXE. */
-	if (((USART_CR1(USART2) & USART_CR1_TXEIE) != 0)
-			&& ((USART_SR(USART2) & USART_SR_TXE) != 0)) {
+	if (((USART_CR1(USART2) & USART_CR1_TXEIE) != 0) && ((USART_SR(USART2) & USART_SR_TXE) != 0)) {
 
 		/* Indicate that we are sending out data. */
 		// gpio_toggle(GPIOA, GPIO7);
@@ -221,8 +229,7 @@ void USART2_IRQHandler(void) {
 		//usart_send(USART1, data);
 		/* The interrupt was caused by the THR becoming empty.  Are there any
 		 more characters to transmit? */
-		if (xQueueReceiveFromISR(xCharsForTxBM, &data,
-				&xHigherPriorityTaskWoken)) {
+		if (xQueueReceiveFromISR(xQueueBluetoothModuleTX, &data, &xHigherPriorityTaskWoken)) {
 			/* A character was retrieved from the buffer so can be sent to the
 			 THR now. */
 			usart_send( USART2, data);

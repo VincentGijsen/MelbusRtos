@@ -36,7 +36,7 @@ static void taskApplication(void *pvParameters) {
 	enum STATE {
 		IDLE = 0, MUSIC, INBOUND_CALL, CALLING, VOICE_ASSIST
 	};
-	static uint8_t playing = 0;
+	uint8_t playing = 0;
 
 	enum STATE appState = IDLE;
 	enum STATE lastState = IDLE;
@@ -50,9 +50,30 @@ static void taskApplication(void *pvParameters) {
 
 		if (xQueueReceive(xApplicationEvents, &evt, QUEUE_BLOCK_TIME) == pdPASS) {
 
+			/*
+			 * GLOBAL events
+			 */
+			switch (evt) {
+			case EVT_PHONE_0_CONNECTED:
+				postConsoleEvent(EVT_PHONE_0_CONNECTED);
+				break;
+			case EVT_PHONE_1_CONNECTED:
+				postConsoleEvent(EVT_PHONE_1_CONNECTED);
+				break;
+			case EVT_PHONE_0_DISCONNECTED:
+				postConsoleEvent(EVT_PHONE_0_DISCONNECTED);
+				break;
+			case EVT_PHONE_1_DISCONNECTED:
+				postConsoleEvent(EVT_PHONE_1_DISCONNECTED);
+				break;
+			}
+
 			switch (appState) {
 
-			case IDLE:
+			/*
+			 * state specific
+			 */
+			case IDLE: {
 				switch (evt) {
 				case EVT_BTN_SCAN:
 					//start playing
@@ -75,10 +96,11 @@ static void taskApplication(void *pvParameters) {
 					break;
 				}
 
+			}
 				//appstate = idle
 				break;
 
-			case VOICE_ASSIST:
+			case VOICE_ASSIST: {
 				switch (evt) {
 
 				case EVT_BTN_1:
@@ -96,11 +118,11 @@ static void taskApplication(void *pvParameters) {
 					break;
 
 				}
+			}
 				//voice assist
 				break;
 
-			case MUSIC:
-
+			case MUSIC: {
 				switch (evt) {
 				case EVT_BTN_NEXT:
 					postConsoleEvent(EVT_MUSIC_NEXT);
@@ -109,15 +131,19 @@ static void taskApplication(void *pvParameters) {
 
 				case EVT_BTN_PREV:
 					postConsoleEvent(EVT_MUSIC_PREVIOUS);
+					postBMcommand(EVT_MUSIC_PREVIOUS);
 					break;
 
 				case EVT_BTN_SCAN:
 					if (playing) {
 						postConsoleEvent(EVT_MUSIC_PAUSE);
-
+						postBMcommand(EVT_MUSIC_PAUSE);
+						//received back via BM as well
 						playing = 0;
 					} else {
-						postConsoleEvent(EVT_MUSIC_PAUSE);
+						postConsoleEvent(EVT_MUSIC_PLAY);
+						postBMcommand(EVT_MUSIC_PLAY);
+						//received back via BM as well
 						playing = 1;
 					}
 
@@ -136,20 +162,33 @@ static void taskApplication(void *pvParameters) {
 
 					/*
 					 * These come from BT module
+					 * DONT REPLY TO THESE by sending events to BM, as it creates a
+					 * LOOP
 					 */
 				case EVT_MUSIC_PAUSE:
 					postConsoleEvent(EVT_MUSIC_PAUSE);
+					playing = 0;
+					//postBMcommand(EV)
 					break;
 
 				case EVT_MUSIC_PLAY:
 					postConsoleEvent(EVT_MUSIC_PLAY);
+					playing = 1;
+					break;
+
+					/*
+					 * DEBUG cmds
+					 */
+
+				case EVT_DGB_Q:
+					postBMcommand(EVT_MUSIC_META);
 					break;
 
 				default:
 					//nothing
 					break;
 				}
-
+			}
 				//appstate = music
 				break;
 
