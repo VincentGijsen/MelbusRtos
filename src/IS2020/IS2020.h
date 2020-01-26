@@ -13,6 +13,7 @@
 #include "task.h"
 #include "queue.h"
 
+#define MAX_DEV_NAME_LENGTH 10
 
 /*
  * prototypes
@@ -24,6 +25,15 @@ void IS2020_decode(uint8_t length, uint8_t* event /*, void funct()*/);
  *
  void IS2020_setIO(void f1(uint8_t c),void f2());
 */
+
+#define MAX_META_SIZE 20
+
+struct TRACK_META_t{
+	uint8_t title[MAX_META_SIZE];
+	uint8_t title_len;
+} ;
+
+
 
 void IS2020_setQueues(QueueHandle_t Rx, QueueHandle_t Tx );
 

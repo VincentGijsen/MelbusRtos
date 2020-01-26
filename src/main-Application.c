@@ -177,12 +177,35 @@ static void taskApplication(void *pvParameters) {
 					break;
 
 					/*
+					 * events from BLuetooth that require followup (e.g. meta update for artists
+					 */
+				case EVT_BM_MUSIC_TRACK_CHANGED:
+					postBMcommand(EVT_MUSIC_REQUEST_META);
+					break;
+
+				case EVT_BM_MUSIC_TRACK_POS_CHANGED:
+					//do something to re-calculate the 'track playing time for example'
+
+					break;
+
+					/*
 					 * DEBUG cmds
 					 */
 
 				case EVT_DGB_Q:
-					postBMcommand(EVT_MUSIC_META);
+					postBMcommand(EVT_MUSIC_REQUEST_META);
 					break;
+
+				case EVT_DGB_W:
+					postBMcommand(EVT_MUSIC_REQUEST_PLAYERS);
+					break;
+
+
+				case EVT_BTN_1:
+					postBMcommand(EVT_MUSIC_NEXT);
+					break;
+
+				case EVT_MUSIC_UPDATED_META:
 
 				default:
 					//nothing

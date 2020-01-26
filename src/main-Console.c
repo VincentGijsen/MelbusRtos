@@ -66,7 +66,6 @@ void mainConsoleManager(void) {
 	usb_init();
 	usbd_poll(usb_getDevPtr());
 
-
 	/* Create the queue of chars that are waiting to be sent to COM0. */
 	xCharsForTx = xQueueCreate(serTX_QUEUE_LEN, sizeof(char));
 
@@ -104,71 +103,81 @@ static void taskConsoleManager(void *pvParameters) {
 	enum STATE state;
 
 	for (;;) {
-				//commands from serial port?
+		//commands from serial port?
 		//if (xSerialGetChar(&c, 20) == pdPASS) {
 		if (usb_vcp_avail()) {
 			c = usb_vcp_recv_byte();
 
 			uint8_t code = EVT_INVALID;
 			switch (c) {
-			case '>':
-				code = EVT_BTN_NEXT;
-				break;
-			case '<':
-				code = EVT_BTN_PREV;
-				break;
-			case 'p':
-				code = EVT_BTN_SCAN;
-				break;
+				case '>':
+					code = EVT_BTN_NEXT;
+					break;
+				case '<':
+					code = EVT_BTN_PREV;
+					break;
+				case 'p':
+					code = EVT_BTN_SCAN;
+					break;
 
-				//code to toggle between display -lines, not available on HU
-			case 'r':
-				code = EVT_BTN_RND;
-				break;
+					//code to toggle between display -lines, not available on HU
+				case 'r':
+					code = EVT_BTN_RND;
+					break;
 
-				/*
-				 * Music mode
-				 * play/pause < in music mode
-				 *
-				 * Inbound call
-				 *  pickup
-				 */
-			case 's':
-				code = EVT_BTN_SCAN;
-				break;
+					/*
+					 * Music mode
+					 * play/pause < in music mode
+					 *
+					 * Inbound call
+					 *  pickup
+					 */
+				case 's':
+					code = EVT_BTN_SCAN;
+					break;
 
-				/*
-				 * Voice Assistent
-				 */
-			case '1':
-				code = EVT_BTN_1;
-				break;
-			case '2':
-				code = EVT_BTN_2;
-				break;
-			case '3':
-				code = EVT_BTN_3;
-				break;
-			case '4':
-				code = EVT_BTN_4;
-				break;
-			case '5':
-				code = EVT_BTN_5;
-				break;
-			case '6':
-				code = EVT_BTN_6;
-				break;
+					/*
+					 * Voice Assistent
+					 */
+				case '1':
+					code = EVT_BTN_1;
+					break;
+				case '2':
+					code = EVT_BTN_2;
+					break;
+				case '3':
+					code = EVT_BTN_3;
+					break;
+				case '4':
+					code = EVT_BTN_4;
+					break;
+				case '5':
+					code = EVT_BTN_5;
+					break;
+				case '6':
+					code = EVT_BTN_6;
+					break;
 
-				/*
-				 * DEBUG options
-				 */
-			case 'q':
-				code = EVT_DGB_Q;
-				break;
+					/*
+					 * DEBUG options
+					 */
+				case 'q':
+					code = EVT_DGB_Q;
+					break;
+				case 'w':
+					code = EVT_DGB_W;
+					break;
+				case 'a':
+					code = EVT_DGB_A;
+					break;
 
-			default:
-				//invalid char
-				break;
+				case 'z':
+					code = EVT_DGB_Z;
+					break;
+
+				default:
+					//invalid char
+					break;
 			}
 
 			if (code != EVT_INVALID) {
@@ -189,69 +198,69 @@ static void taskConsoleManager(void *pvParameters) {
 		if (xQueueReceive(xConsoleEvents, &evt, 1) == pdPASS) {
 			switch (evt) {
 
-			case EVT_MUSIC_SCREEN:
-				updateScreen("MUSIC ACTIVATED\n");
-				state = PLAYING;
-				break;
+				case EVT_MUSIC_SCREEN:
+					updateScreen("MUSIC ACTIVATED\r\n");
+					state = PLAYING;
+					break;
 
-			case EVT_MUSIC_PAUSE:
-				state = PAUSE;
-				updateScreen("PAUSE\n");
-				break;
+				case EVT_MUSIC_PAUSE:
+					state = PAUSE;
+					updateScreen("PAUSE\r\n");
+					break;
 
-			case EVT_MUSIC_PLAY:
-				updateScreen("PLAY\n");
-				state = PLAYING;
-				break;
+				case EVT_MUSIC_PLAY:
+					updateScreen("PLAY\r\n");
+					state = PLAYING;
+					break;
 
-			case EVT_MUSIC_FF:
-				updateScreen("FF\n");
-				break;
+				case EVT_MUSIC_FF:
+					updateScreen("FF\r\n");
+					break;
 
-			case EVT_MUSIC_FR:
-				updateScreen("FR\n");
-				break;
+				case EVT_MUSIC_FR:
+					updateScreen("FR\r\n");
+					break;
 
-			case EVT_MUSIC_NEXT:
-				updateScreen("NEXT\n");
-				break;
+				case EVT_MUSIC_NEXT:
+					updateScreen("NEXT\r\n");
+					break;
 
-			case EVT_MUSIC_PREVIOUS:
-				updateScreen("PREVIOU\n");
-				break;
+				case EVT_MUSIC_PREVIOUS:
+					updateScreen("PREVIOUS\r\n");
+					break;
 
-			case EVT_CALL_INBOUND:
-				updateScreen("CALL INBOUND\n");
-				state = CALL_INBOUND;
-				break;
+				case EVT_CALL_INBOUND:
+					updateScreen("CALL INBOUND\r\n");
+					state = CALL_INBOUND;
+					break;
 
-			case EVT_CALL_OUTBOUND:
-				updateScreen("CALL_OUTBOUND\n");
-				break;
+				case EVT_CALL_OUTBOUND:
+					updateScreen("CALL_OUTBOUND\r\n");
+					break;
 
-			case EVT_CMD_VOICEASSISTANT_START:
-				updateScreen("VOICE_ASSIST START\n");
-				break;
+				case EVT_CMD_VOICEASSISTANT_START:
+					updateScreen("VOICE_ASSIST START\r\n");
+					break;
 
-			case EVT_CMD_VOICEASSISTANT_CLOSE:
-				updateScreen("VOICE_ASSIST STOP\n");
-				break;
+				case EVT_CMD_VOICEASSISTANT_CLOSE:
+					updateScreen("VOICE_ASSIST STOP\r\n");
+					break;
 
-			case EVT_PHONE_0_CONNECTED:
-				updateScreen("PHONE 0 CONNECTED\n");
-				break;
+				case EVT_PHONE_0_CONNECTED:
+					updateScreen("PHONE 0 CONNECTED\r\n");
+					break;
 
-			case EVT_PHONE_0_DISCONNECTED:
-				updateScreen("PHONE 0 disconnected\n");
-				break;
+				case EVT_PHONE_0_DISCONNECTED:
+					updateScreen("PHONE 0 disconnected\r\n");
+					break;
 
-			case EVT_PHONE_1_CONNECTED:
-				updateScreen("PHONE 1 CONNECTED\n");
-				break;
+				case EVT_PHONE_1_CONNECTED:
+					updateScreen("PHONE 1 CONNECTED\r\n");
+					break;
 
-			case EVT_PHONE_1_DISCONNECTED:
-				updateScreen("PHONE 1 disconnected\n");
-				break;
+				case EVT_PHONE_1_DISCONNECTED:
+					updateScreen("PHONE 1 disconnected\r\n");
+					break;
 
 			}
 		}
@@ -260,28 +269,28 @@ static void taskConsoleManager(void *pvParameters) {
 		//vTaskDelayUntil(&xNextWakeTime, 500);
 
 		switch (state) {
-		case PLAYING:
-			//updateScreen("playing", 7);
-			break;
+			case PLAYING:
+				//updateScreen("playing", 7);
+				break;
 
-		case IDLE:
-			//updateScreen("idle", 4);
-			break;
+			case IDLE:
+				//updateScreen("idle", 4);
+				break;
 
-		case CALL_INBOUND:
-			//nothing, text is accurate
+			case CALL_INBOUND:
+				//nothing, text is accurate
 
-			break;
+				break;
 
-		case CALL_OUTBOUND:
+			case CALL_OUTBOUND:
 
-			//nothing
+				//nothing
 
-			break;
+				break;
 
-		default:
-			//to be filled;
-			break;
+			default:
+				//to be filled;
+				break;
 		}
 
 		/*
@@ -302,13 +311,15 @@ static void taskConsoleManager(void *pvParameters) {
 void updateScreen(char* content) {
 	static char cls[] = { 27, '[', '2', 'J', 27, '[', 'H' }; /*terminal command to clear it */
 	//lSerialPutString(cls, 7);
-	usb_vcp_send_strn(cls, 7);
+	//usb_vcp_send_strn(cls, 7);
 	uint8_t x = 0;
 	while (content[x] != '\n') {
 		//lSerialPutString(&content[x], 1);
 		usb_vcp_send_strn(&content[x], 1);
 		x++;
 	}
+	usb_vcp_send_strn("\r\n", 2);
+
 }
 
 static void usart1_setup() {
@@ -376,21 +387,21 @@ signed long xSerialGetChar(char *pcRxedChar, TickType_t xBlockTime) {
  }
  */
 /*
-signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime) {
-	long lReturn;
+ signed long xSerialPutChar(uint8_t data, TickType_t xBlockTime) {
+ long lReturn;
 
-	if ( xQueueSend( xCharsForTx, &data, xBlockTime ) == pdPASS) {
-		lReturn = pdPASS;
-		//USART_ITConfig( xUARTS[ lPort ], USART_IT_TXE, ENABLE );
-	// Enable transmit interrupt so it sends back the data.
-		USART_CR1(USART1) |= USART_CR1_TXEIE;
-	} else {
-		lReturn = pdFAIL;
-	}
+ if ( xQueueSend( xCharsForTx, &data, xBlockTime ) == pdPASS) {
+ lReturn = pdPASS;
+ //USART_ITConfig( xUARTS[ lPort ], USART_IT_TXE, ENABLE );
+ // Enable transmit interrupt so it sends back the data.
+ USART_CR1(USART1) |= USART_CR1_TXEIE;
+ } else {
+ lReturn = pdFAIL;
+ }
 
-	return lReturn;
-}
-*/
+ return lReturn;
+ }
+ */
 
 void USART1_IRQHandler(void) {
 	long xHigherPriorityTaskWoken = pdFALSE;

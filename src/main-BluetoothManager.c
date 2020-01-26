@@ -48,8 +48,8 @@ void mainBM(void) {
 	usart2_setup();
 
 #define PRIO ( tskIDLE_PRIORITY + 1 )
-	unsigned short STACK_SIZE = configMINIMAL_STACK_SIZE + 60;
-	xTaskCreate(taskBMManager, "BM", STACK_SIZE, (void *) 0, PRIO,
+	unsigned short STACK_SIZE = configMINIMAL_STACK_SIZE + 120;
+	xTaskCreate(taskBMManager, "BlueMan", STACK_SIZE, (void *) 0, PRIO,
 	NULL);
 
 }
@@ -72,6 +72,11 @@ static void taskBMManager(void *pvParameters) {
 		if (xQueueReceive(xBMCommands, &evt, 0) == pdPASS) {
 
 			switch (evt) {
+
+				case EVT_BTN_1:
+					IS2020_SET_PIN();
+					usb_vcp_send_strn("pin\r",4);
+					break;
 				case EVT_MUSIC_NEXT:
 					IS2020_MUSIC_CMD(eMUSIC_NEXT, 0);
 					break;
@@ -93,19 +98,26 @@ static void taskBMManager(void *pvParameters) {
 					IS2020_MUSIC_CMD(eMUSIC_PLAY, 0);
 					break;
 
-				case EVT_MUSIC_META:
+				case EVT_MUSIC_REQUEST_META:
 					//IS2020_AVRCP_DISPLAYABLE_CHARS(writeSerial);
 					//vTaskDelay(100);
 					//usb_vcp_send_strn("meta\n",5);
-					IS2020_AVRCP_META();
+					IS2020_AVRCP_REQUEST_META();
 					//IS2020_AVRCP_GETPLAY_STATUS(writeSerial);
 					break;
+
+				case EVT_MUSIC_REQUEST_PLAYERS:
+					//IS2020_AVRCP_GetFolderItems(0,A)
+					IS2020_AVRCP_REGISTER_NOTIFICATION_POSCHANGED(0);
+					IS2020_AVRCP_REGISTER_NOTIFICATION_TRACKCHANGED(0);
 
 				case EVT_PHONE_0_CONNECTED:
 					//query info
 					IS2020_read_link_status(0);
 					postApplicationEvent(EVT_PHONE_0_CONNECTED);
-					IS2020_AVRCP_REGISTER_ALL_EVENTS(0);
+					//send command to que, to self, to 'uncouple' recursive handling.
+					postBMcommand(EVT_PHONE_0_REQUEST_EVENTS);
+					//IS2020_AVRCP_REGISTER_ALL_EVENTS(0);
 
 					break;
 
@@ -136,6 +148,10 @@ static void taskBMManager(void *pvParameters) {
 
 				}
 					break;
+
+				case EVT_PHONE_0_REQUEST_EVENTS:
+					usb_vcp_send_strn("req-evt\r\n", 8);
+					//IS2020_AVRCP_REGISTER_ALL_EVENTS(0);
 
 				default:
 

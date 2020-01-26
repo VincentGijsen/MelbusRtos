@@ -12,10 +12,10 @@
 
 #include "../usb.h"
 
-#define MAX_DEV_NAME_LENGTH 10
+static struct TRACK_META_t IS2020_trackMeta;
 
 static uint8_t IS2020_linkStatus[8];
-static uint8_t IS2020_remoteDeviceNames[2][MAX_DEV_NAME_LENGTH];
+static uint8_t IS2020_remoteDeviceNames[2][MAX_DEV_NAME_LENGTH] = { { 0 }, { 0 } };
 static uint8_t IS2020_deviceSupportAvrcpV13[2] = { 0 };
 static uint8_t IS2020_maxBatteryLevel[2] = { 0 };
 static uint8_t IS2020_currentBatteryLevel[2] = { 0 };
@@ -32,9 +32,15 @@ void *_f1;
 void (*_f2)();
 
 void IS2020_getRemoteDeviceName(uint8_t devId, char* name, uint8_t *len) {
-	name = IS2020_remoteDeviceNames[devId];
-	len = MAX_DEV_NAME_LENGTH;
+	len = 0;
+	for (int x = 0; x < MAX_DEV_NAME_LENGTH; x++) {
+		if (IS2020_remoteDeviceNames[devId][x] != 0x00) {
+			name[x] = IS2020_remoteDeviceNames[devId][x];
+			len = x;
+		}
+	}
 }
+
 void IS2020_setQueues(QueueHandle_t Rx, QueueHandle_t Tx) {
 	IS2020_qRx = Rx;
 	IS2020_qTx = Tx;
@@ -61,7 +67,7 @@ void IS2020_WriteByteToBluetooth(uint8_t data) {
 }
 
 void IS2020_getnextEvent() {
-	vTaskDelay(100);
+	vTaskDelay(120);
 	uint8_t awaiting_pkg_size = 0, tmp = 0;
 
 	if ((uxQueueMessagesWaiting(IS2020_qRx) > 3)) {
@@ -81,6 +87,7 @@ void IS2020_getnextEvent() {
 				//event[2] = tmp;
 
 				if (awaiting_pkg_size >= QUEUELIMIT_BLUETOOTH_MODULE_RX) {
+
 					while (1) {
 						//empty buffer by reading #-chars
 						//todo
@@ -94,6 +101,7 @@ void IS2020_getnextEvent() {
 	if (awaiting_pkg_size > 0
 			&& uxQueueMessagesWaiting(IS2020_qRx) >= awaiting_pkg_size) {
 
+		//copy the data from QUEUE into the event point, for processing
 		for (uint8_t x = 0; x < awaiting_pkg_size; x++) {
 			xQueueReceive(IS2020_qRx, &tmp, 20);
 			//overflow protection
@@ -132,6 +140,33 @@ void IS2020_sendPacketInt(uint8_t cmd, uint8_t data) {
 	IS2020_WriteByteToBluetooth(data);
 	chk += data;
 	IS2020_WriteByteToBluetooth(0x100 - chk);
+}
+
+void IS2020_sendArrayIntGeneric(uint8_t pkgSize, uint8_t cmd,
+		uint8_t data[]) {
+	uint8_t checksum = 0;
+	//write startbyte
+	IS2020_WriteByteToBluetooth(0xAA);
+	//write MSB pklen
+	IS2020_WriteByteToBluetooth(pkgSize >> 8);
+	checksum = pkgSize >> 8;
+	//write LSB pklen
+	IS2020_WriteByteToBluetooth(pkgSize & 0xFF);
+	checksum += pkgSize & 0xFF;
+	//write cmd
+	IS2020_WriteByteToBluetooth(cmd);
+	checksum += cmd;
+	////write devId
+	//IS2020_WriteByteToBluetooth(devId);
+	//checksum += devId;
+
+	for (uint16_t x = 0; x < pkgSize - 2; x++) {
+		IS2020_WriteByteToBluetooth(data[x]);
+		checksum += data[x];
+	}
+	//write checksum out
+	IS2020_WriteByteToBluetooth(0x100 - (checksum % 0x100));
+
 }
 
 void IS2020_sendArrayInt(uint8_t pkgSize, uint8_t cmd, uint8_t devId,
@@ -173,6 +208,7 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 	 * Send Ack if response not ack from IS2020
 	 */
 	if (cmd != EVT_Command_ACK) {
+		vTaskDelay(12);
 		IS2020_sendAck(cmd);
 	}
 
@@ -180,45 +216,57 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 	 * handle actual payload
 	 */
 	switch (cmd) {
+		//0x00
 		case EVT_Command_ACK:
 			//cmd
 			t1 = event[2];
 			switch (t1) {
 				case 0x00:
 					//completed cmd
-					usb_vcp_send_strn("ack\n", 4);
+					usb_vcp_send_strn("ack ", 4);
 					break;
 				case 0x01:
 					//cmd disallowed
-					//break;
+					usb_vcp_send_strn("disallowed ", 11);
+					break;
 				case 0x02:
 					//unkown cmd
-					//break;
+					usb_vcp_send_strn("unknown ", 8);
+					break;
 				case 0x03:
+					usb_vcp_send_strn("paraminc ", 9);
 					//parameter incorrect
-					//break;
+					break;
 				case 0x04:
 					//btm busy
-					//break;
+					usb_vcp_send_strn("bussy ", 6);
+					break;
 				case 0x05:
 					//btm memory full
-					//break;
+					usb_vcp_send_strn("memfull ", 8);
+					break;
 
 				default:
 					{ //fall-trough-all-errors
 					  //catch-all
-					uint8_t b[5] = { 'e', 'r', 'r,', ':', '0' };
-					b[4] = t1 + 0x30;			//convert to ascii
-					usb_vcp_send_strn(b, 5);
+					  //uint8_t b[5] = { 'A', 'C', 'K,', 'X', '0' };
+					  //b[4] = t1 + 0x30;			//convert to ascii
+					  //usb_vcp_send_strn(b, 5);
+
 				}
 					return;
 			}
+			//write byte to term
+			usb_vcp_send_strn("evt: ", 5);
+			usb_vcp_send_byte((event[1] >> 4) + 0x30);
+			usb_vcp_send_byte((event[1] & 0x0F) + 0x30);
+			usb_vcp_send_strn("\r\n", 2);
 
 			break;
 
 		case EVT_BTM_Status:
 
-			IS2020_read_link_status();
+			//IS2020_read_link_status();
 
 			break;
 
@@ -256,8 +304,10 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 			break;
 
 		case EVT_AVRCP_Specific_Rsp: { //response from IS2020mcu
-			usb_vcp_send_strn("avrcpresp\n", 10);
+			usb_vcp_send_strn("avrcpresp\r\n", 11);
+
 			uint8_t devId = event[IS2020_EVENT_IDX_DEVID];
+			uint8_t avrcpResponse = event[2]; //byte 0 of AVRCP pgk
 			uint8_t subUnitId = event[3];
 			uint8_t opcode = event[4];
 			uint8_t compId[3] = { event[5], event[6], event[7] };
@@ -330,13 +380,37 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 								parameter_byte++) {
 							//DBG(String(event[parameter_byte], HEX));
 						}
-						usb_vcp_send_strn("TRKch\n", 6);
+						usb_vcp_send_strn("TRKch\r\n", 7);
+						//IS2020_AVRCP_REGISTER_NOTIFICATION_TRACKCHANGED(0);
+						switch (avrcpResponse) {
+							case AVRCP_EVENT_EVENTMSGTYPE_NOTIFY:
+								break;
+							case AVRCP_EVENT_EVENTMSGTYPE_INTERIM:
+								break;
+							case AVRCP_EVENT_EVENTMSGTYPE_CHANGED:
+								//re-active event
+								IS2020_AVRCP_REGISTER_NOTIFICATION_TRACKCHANGED(0);
+								postApplicationEvent(EVT_BM_MUSIC_TRACK_CHANGED);
+						}
+
 						break;
 
 					case AVRCP_EVENT_PLAYBACK_POS_CHANGED:
 						IS2020_playback_position = event[13] << 24 | event[14] << 16
 								| event[15] << 8 | event[16];
-						usb_vcp_send_strn("posch\n", 6);
+						usb_vcp_send_strn("POSch\r\n", 7);
+						//req-requist next update
+						switch (avrcpResponse) {
+							case AVRCP_EVENT_EVENTMSGTYPE_NOTIFY:
+								break;
+							case AVRCP_EVENT_EVENTMSGTYPE_INTERIM:
+								break;
+							case AVRCP_EVENT_EVENTMSGTYPE_CHANGED:
+								//re-active event
+								IS2020_AVRCP_REGISTER_NOTIFICATION_POSCHANGED(0);
+								postApplicationEvent(EVT_BM_MUSIC_TRACK_POS_CHANGED);
+						}
+
 						break;
 
 				}		//switch
@@ -352,7 +426,7 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 			 */
 				uint8_t numPlayerAttribs = event[12];
 
-				usb_vcp_send_strn("plyattr\n", 8);
+				usb_vcp_send_strn("plyattr\r\n", 8);
 			}
 
 			//break;
@@ -367,39 +441,51 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 					uint8_t attribTypeOfField = /*events 13 ->16*/event[attribOffset + 0];
 					uint16_t codingOfString = event[attribOffset + 1] << 8 | event[attribOffset + 2]; //will default to only 18... 0x6a == UTF8
 					uint16_t atribValLength = event[attribOffset + 3] << 8 | event[attribOffset + 4];
+					uint8_t cappedLen = atribValLength; //used to copy into buff
 					switch (attribTypeOfField) {
 						case AVRCP_MEDIA_ATTRIBUTE_TITLE:
-							usb_vcp_send_strn("\ntitle:", 7);
+
+							if (cappedLen > MAX_META_SIZE) {
+								cappedLen = MAX_META_SIZE - 1;
+							}
+							memcpy(&IS2020_trackMeta.title[0], &event[attribOffset + 5], cappedLen);
+							IS2020_trackMeta.title[cappedLen + 1] = 0;
+							IS2020_trackMeta.title_len = cappedLen;
+
+							//IS2020_trackMeta[MAX_META_SIZE - 1] = 0;
+							usb_vcp_send_strn("\r\ntitle:", 8);
 							usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 							break;
 						case AVRCP_MEDIA_ATTRIBUTE_ARTIST:
-							usb_vcp_send_strn("\nartist: ", 8);
+							usb_vcp_send_strn("\r\nartist: ", 9);
 							usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 							break;
 						case AVRCP_MEDIA_ATTRIBUTE_ALBUM:
-							usb_vcp_send_strn("\nalbum:", 7);
+							usb_vcp_send_strn("\r\nalbum:", 8);
 							usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 							break;
 						case AVRCP_MEDIA_ATTRIBUTE_TRACK:
-							usb_vcp_send_strn("\ntrack:", 7);
+							usb_vcp_send_strn("\r\ntrack:", 8);
 							usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 							break;
 
 							//case AVRCP_MEDIA_ATTRIBUTE_LAST: //implicitly due to the defines
 						case AVRCP_MEDIA_ATTRIBUTE_DURATION:
-							usb_vcp_send_strn("\nduration:", 10);
+							usb_vcp_send_strn("\r\nduration:", 11);
 							usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 							break;
 
 						default:
-							usb_vcp_send_strn("\not-impl:", 9);
+							usb_vcp_send_strn("\r\not-impl:", 10);
 							//usb_vcp_send_strn(&event[attribOffset + 5], atribValLength);
 					}
 					//update offset to point to next attribute (if any)
 #define THREE_NULL_CHARS_TRAILING 3
 					attribOffset += 5 + atribValLength + THREE_NULL_CHARS_TRAILING;
 				}
-				usb_vcp_send_strn("meta_resp\n", 10);
+
+				postApplicationEvent(EVT_MUSIC_UPDATED_META);
+				usb_vcp_send_strn("meta_resp\r\n", 11);
 			}
 			/*
 			 default:
@@ -421,18 +507,32 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 
 				case 0x00: //reporting of remote device name
 				{
-					for (uint8_t i = 0; i < MAX_DEV_NAME_LENGTH; i++) {
-						IS2020_remoteDeviceNames[event[1]][i] = ' ';
-					}
+					//clear old name
+					memset(IS2020_remoteDeviceNames[event[1]], 0x00, MAX_DEV_NAME_LENGTH);
+					//for (uint8_t i = 0; i < MAX_DEV_NAME_LENGTH; i++) {
+					//	IS2020_remoteDeviceNames[event[1]][i] = 0x00;
+					//}
 
 					//set new name
 					for (uint8_t i = 3; i < length - 1; i++) { //package-lengt -1
 						if (event[i] == 0x00)
 							break;
+						//break if device-name overflows storage
 						if (i == MAX_DEV_NAME_LENGTH - 1)
 							break;
 
 						IS2020_remoteDeviceNames[event[1]][i - 3] = event[i];
+
+					}
+					//send event to notify a new name
+					switch (event[1]) {
+						case 0:
+							postApplicationEvent(EVT_PHONE_0_REMOTE_NAME_UPDATED);
+							break;
+						case 1:
+							postApplicationEvent(EVT_PHONE_1_REMOTE_NAME_UPDATED);
+							break;
+
 					}
 				}
 					break;
@@ -474,9 +574,9 @@ void IS2020_decode(uint8_t length, uint8_t* event) {
 				//set displaychar
 				//getAVRC_caps
 				//getlistplayerattribs
-				postBMcommand(EVT_PHONE_0_CONNECTED);
+				//postBMcommand(EVT_PHONE_0_CONNECTED);
 				IS2020_queryRemoteDeviceName(0);
-				IS2020_avrcpListPlayerAttributes(0);
+				//IS2020_avrcpListPlayerAttributes(0);
 
 			} else {
 				postBMcommand(EVT_PHONE_0_DISCONNECTED);
