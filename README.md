@@ -24,6 +24,7 @@ Melbus port, do note, only for HU-850, i wasn't able to sniff other radios...
 # Working
 * bluetooth comms with IS2020
 * extract meta from songs running
+* event driven updates due to song-end, user-actions on phone, ...
 * control of music playback
 * console (via STM32f103 usb virtual hu-interface to send HU-keys and get single line display back (tested with SCREEN terminal)
 
