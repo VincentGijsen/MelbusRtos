@@ -20,3 +20,18 @@ Melbus port, do note, only for HU-850, i wasn't able to sniff other radios...
 ## IDE
 
 * stm32workbench
+
+# Working
+* bluetooth comms with IS2020
+* extract meta from songs running
+* control of music playback
+* console (via STM32f103 usb virtual hu-interface to send HU-keys and get single line display back (tested with SCREEN terminal)
+
+
+
+# Todo
+* implement melbus logic for initialisation and generating of text-sending reqto HU850
+* improve statemachine for 
+  * settings menu
+  * voice-assistent
+  * ..
